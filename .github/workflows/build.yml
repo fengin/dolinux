@@ -1,0 +1,123 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:  # 支持手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+            bundle: none           # 仅编译 exe，免安装
+          - os: macos-latest       # Apple Silicon (ARM64)
+            label: macos-arm64
+            bundle: app            # .app 包，拖拽即用
+          - os: macos-13           # Intel (x86_64)
+            label: macos-x64
+            bundle: app
+          - os: ubuntu-22.04
+            label: linux-x64
+            bundle: appimage       # AppImage，免安装
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libfuse2
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        run: npx tauri build --bundles ${{ matrix.bundle }}
+
+      # ===== 打包为平台可移植文件 =====
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item "src-tauri\target\release\dolinux.exe" "liudu-${{ matrix.label }}.exe"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd src-tauri/target/release/bundle/macos
+          zip -r -y ../../../../../liudu-${{ matrix.label }}.app.zip *.app
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mv src-tauri/target/release/bundle/appimage/*.AppImage liudu-${{ matrix.label }}.AppImage
+          chmod +x liudu-${{ matrix.label }}.AppImage
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: liudu-${{ matrix.label }}
+          path: liudu-*
+          retention-days: 30
+
+  # ===== 自动创建 GitHub Release（仅 tag 触发时） =====
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: liudu-*
+          generate_release_notes: true
+          body: |
+            ## 流读 ${{ github.ref_name }}
+
+            Linux.do 阅读助手 — 轻量、高效、免安装
+
+            ### 下载说明
+            | 文件 | 平台 | 说明 |
+            |------|------|------|
+            | `liudu-windows-x64.exe` | Windows 10/11 | 双击直接运行 |
+            | `liudu-macos-arm64.app.zip` | macOS (Apple Silicon) | 解压后拖入应用文件夹 |
+            | `liudu-macos-x64.app.zip` | macOS (Intel) | 解压后拖入应用文件夹 |
+            | `liudu-linux-x64.AppImage` | Linux | `chmod +x` 后直接运行 |
+
+            > ⚠️ macOS 首次打开可能提示"无法验证开发者"，请在「系统设置 → 隐私与安全性」中允许运行。

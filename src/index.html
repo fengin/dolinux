@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>流读 - Linux.do 阅读助手</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部标题栏 -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">⚡</span>
+                    <span class="logo-text">流读</span>
+                    <span class="logo-subtitle">Linux.do 阅读助手</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="btn-settings" class="icon-btn" title="设置">⚙️</button>
+                <button id="btn-about" class="icon-btn" title="关于">ℹ️</button>
+            </div>
+        </header>
+
+        <!-- Chrome 连接状态栏 -->
+        <section class="connection-bar">
+            <div class="connection-status">
+                <span id="status-dot" class="status-dot disconnected"></span>
+                <span id="status-text">未连接</span>
+            </div>
+            <div class="connection-actions">
+                <label class="port-label">
+                    端口: <input type="number" id="input-port" value="9222" min="1" max="65535" class="port-input">
+                </label>
+                <button id="btn-launch" class="btn btn-secondary">启动 Chrome</button>
+                <button id="btn-connect" class="btn btn-primary">连接</button>
+            </div>
+        </section>
+
+        <!-- 任务卡片区域 -->
+        <main class="task-area">
+            <!-- 刷主题阅读 -->
+            <section class="task-card" id="card-topic">
+                <div class="task-header">
+                    <div class="task-info">
+                        <h3>🔖 刷主题阅读</h3>
+                        <p class="task-desc">模拟真人浏览未读话题，增加主题阅读数</p>
+                    </div>
+                    <button id="btn-topic-start" class="btn btn-start" disabled>▶ 开始</button>
+                </div>
+                <div class="task-config">
+                    <div class="config-row">
+                        <label>目标数量:
+                            <input type="number" id="topic-target" value="500" min="1" class="config-input">
+                        </label>
+                    </div>
+                    <div class="progress-bar-container" id="topic-progress-container" style="display:none">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="topic-progress-fill" style="width:0%"></div>
+                        </div>
+                        <span class="progress-text" id="topic-progress-text">0/500</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 刷帖子 + 点赞 -->
+            <section class="task-card" id="card-post">
+                <div class="task-header">
+                    <div class="task-info">
+                        <h3>📄 刷帖子 + 点赞</h3>
+                        <p class="task-desc">快速浏览帖子增加阅读数，自动为优质帖子点赞</p>
+                    </div>
+                    <button id="btn-post-start" class="btn btn-start" disabled>▶ 开始</button>
+                </div>
+                <div class="task-config">
+                    <div class="config-row">
+                        <label>目标帖子数:
+                            <input type="number" id="post-target" value="10000" min="1" class="config-input">
+                        </label>
+                        <label>跳过前:
+                            <input type="number" id="post-skip" value="3" min="0" class="config-input config-input-sm">
+                            个热门话题
+                        </label>
+                    </div>
+                    <div class="config-row">
+                        <label>帖子延时:
+                            <input type="number" id="post-delay" value="200" min="50" step="50" class="config-input config-input-sm">
+                            ms
+                        </label>
+                        <span class="config-hint">⚠ 低于100ms可能导致阅读不被记录</span>
+                    </div>
+                    <div class="config-row like-config">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="post-like-enabled" checked>
+                            自动点赞
+                        </label>
+                        <label>中文 ≥
+                            <input type="number" id="post-like-chars" value="50" min="10" class="config-input config-input-sm">
+                            字
+                        </label>
+                        <label>上限
+                            <input type="number" id="post-like-max" value="30" min="1" class="config-input config-input-sm">
+                            个
+                        </label>
+                    </div>
+                    <div class="progress-bar-container" id="post-progress-container" style="display:none">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="post-progress-fill" style="width:0%"></div>
+                        </div>
+                        <span class="progress-text" id="post-progress-text">帖子 0/10000  点赞 0/30</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 日志面板 -->
+        <section class="log-panel">
+            <div class="log-header">
+                <span>运行日志</span>
+                <div class="log-actions">
+                    <button id="btn-log-clear" class="btn-sm">清空</button>
+                    <button id="btn-log-toggle" class="btn-sm">折叠</button>
+                </div>
+            </div>
+            <div class="log-content" id="log-content">
+                <div class="log-entry log-info">
+                    <span class="log-time">--:--:--</span>
+                    <span class="log-msg">欢迎使用流读！请先启动 Chrome 并连接。</span>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal-overlay" id="modal-settings" style="display:none">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>⚙️ 设置</h3>
+                <button class="modal-close" id="btn-settings-close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h4>Chrome 配置</h4>
+                    <label class="settings-label">
+                        可执行文件路径:
+                        <input type="text" id="settings-chrome-path" class="settings-input">
+                    </label>
+                    <label class="settings-label">
+                        调试端口:
+                        <input type="number" id="settings-chrome-port" class="settings-input" min="1" max="65535">
+                    </label>
+                    <label class="settings-label">
+                        用户数据目录:
+                        <input type="text" id="settings-chrome-datadir" class="settings-input">
+                    </label>
+                    <label class="settings-checkbox-row">
+                        <span>任务完成后自动关闭 Chrome</span>
+                        <input type="checkbox" id="settings-auto-close">
+                    </label>
+                </div>
+
+                <div class="settings-section">
+                    <h4>主题阅读 - 入口 URL</h4>
+                    <div id="settings-topic-urls" class="url-list"></div>
+                    <button id="btn-add-topic-url" class="btn btn-secondary btn-sm">+ 添加</button>
+                </div>
+
+                <div class="settings-section">
+                    <h4>帖子阅读 - 入口 URL</h4>
+                    <div id="settings-post-urls" class="url-list"></div>
+                    <button id="btn-add-post-url" class="btn btn-secondary btn-sm">+ 添加</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-settings-reset" class="btn btn-secondary">恢复默认</button>
+                <button id="btn-settings-save" class="btn btn-primary">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 关于弹窗 -->
+    <div class="modal-overlay" id="modal-about" style="display:none">
+        <div class="modal modal-about">
+            <div class="modal-header">
+                <h3>ℹ️ 关于</h3>
+                <button class="modal-close" id="btn-about-close">✕</button>
+            </div>
+            <div class="modal-body about-body">
+                <div class="about-logo">⚡</div>
+                <h2 class="about-title">流读</h2>
+                <p class="about-subtitle">Linux.do 阅读助手</p>
+                <p class="about-version" id="about-version">v1.0.0</p>
+
+                <div class="about-divider"></div>
+
+                <div class="about-info">
+                    <div class="about-row">
+                        <span class="about-label">作者</span>
+                        <span class="about-value">凌封</span>
+                    </div>
+                    <div class="about-row">
+                        <span class="about-label">🔗 开源框架</span>
+                        <a href="#" class="about-link" data-url="https://github.com/fengin/auto-chrome">github.com/fengin/auto-chrome</a>
+                    </div>
+                    <div class="about-row">
+                        <span class="about-label">🌐 技术圈</span>
+                        <a href="#" class="about-link" data-url="https://aibook.ren">aibook.ren（AI全书）</a>
+                    </div>
+                </div>
+
+                <div class="about-divider"></div>
+                <p class="about-tech">基于 Rust + Tauri 构建<br>轻量 · 高效 · 跨平台</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/logger.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# 依赖与构建
+node_modules/
+src-tauri/target/
+
+# Tauri 自动生成
+src-tauri/gen/
+
+# 临时文件
+*.txt
+*.log
+gen_icon.js
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

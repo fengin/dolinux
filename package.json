@@ -1,0 +1,11 @@
+{
+  "name": "dolinux",
+  "version": "1.0.0",
+  "description": "流读 - Linux.do 阅读助手",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
