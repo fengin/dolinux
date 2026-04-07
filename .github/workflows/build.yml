@@ -16,7 +16,7 @@ jobs:
         include:
           - os: windows-latest
             label: windows-x64
-            bundle: none           # 仅编译 exe，免安装
+            bundle: nsis           # exe 始终生成，nsis 安装包可忽略
           - os: macos-latest       # Apple Silicon (ARM64)
             label: macos-arm64
             bundle: app            # .app 包，拖拽即用
