@@ -128,6 +128,31 @@ pub const JS_GET_POST_IDS: &str = r#"
 })()
 "#;
 
+/// JS: 获取当前话题的总帖子数（从 Discourse 进度条或话题元数据中提取）
+pub const JS_GET_TOPIC_POST_COUNT: &str = r#"
+(() => {
+    // 方式1: 从 timeline 中获取
+    const total = document.querySelector('.timeline-replies .topic-replies-count, .timeline-footer-controls .total');
+    if (total) {
+        const n = parseInt(total.textContent.replace(/[^\d]/g, ''));
+        if (n > 0) return n;
+    }
+    // 方式2: 从进度条获取
+    const progress = document.querySelector('#topic-progress .nums .current-post-number + span');
+    if (progress) {
+        const n = parseInt(progress.textContent.replace(/[^\d]/g, ''));
+        if (n > 0) return n;
+    }
+    // 方式3: 从 discourse 内部数据获取
+    const topicController = document.querySelector('#topic-progress');
+    if (topicController) {
+        const total2 = topicController.querySelector('[data-topic-posts-count]');
+        if (total2) return parseInt(total2.dataset.topicPostsCount) || 0;
+    }
+    return 0;
+})()
+"#;
+
 /// JS: 尝试为帖子点赞，返回点赞结果
 pub fn js_try_like_post(min_chars: u32) -> String {
     format!(r#"
@@ -184,3 +209,27 @@ pub const JS_SCROLL_BOTTOM: &str = "window.scrollTo(0, document.body.scrollHeigh
 /// JS: 检查列表是否存在
 pub const JS_CHECK_TOPIC_LIST: &str =
     "!!document.querySelector('tr.topic-list-item')";
+
+/// JS: 注入 track_visit 请求，触发 Discourse 服务端记录主题浏览数
+/// Page.navigate 会触发全页刷新，绕过 Discourse SPA 路由中的 track_visit AJAX 请求，
+/// 因此需要在页面加载后手动发起等价请求。
+pub const JS_TRACK_TOPIC_VIEW: &str = r#"
+(() => {
+    const m = window.location.pathname.match(/\/t\/(?:[^\/]+\/)?(\d+)/);
+    if (!m) return false;
+    const topicId = m[1];
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    fetch('/t/' + topicId + '.json?track_visit=true&forceLoad=true', {
+        headers: {
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Discourse-Logged-In': 'true',
+            'Discourse-Present': 'true',
+            'Discourse-Track-View': 'true',
+            'Discourse-Track-View-Topic-Id': topicId,
+            'X-CSRF-Token': csrf
+        }
+    });
+    return true;
+})()
+"#;

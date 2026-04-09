@@ -1,6 +1,6 @@
 [package]
 name = "dolinux"
-version = "1.0.0"
+version = "1.0.1"
 description = "流读 - Linux.do 阅读助手"
 authors = ["凌封"]
 edition = "2021"
