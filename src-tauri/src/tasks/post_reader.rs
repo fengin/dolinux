@@ -173,85 +173,173 @@ pub async fn run(
 
                 // 在话题内快速阅读帖子
                 let mut seen_post_ids: HashSet<String> = HashSet::new();
-                let mut no_new_count = 0;
 
-                // 获取话题总帖子数，用于判断是否还有更多帖子
-                let topic_total_posts = client
-                    .evaluate_as_i64(JS_GET_TOPIC_POST_COUNT)
-                    .await
-                    .unwrap_or(0) as u32;
-
-                while total_read < target && !state.should_stop() {
-                    // 获取当前可见的帖子 ID
-                    let posts_json = client
-                        .evaluate_as_string(JS_GET_POST_IDS)
+                // 尝试通过 Discourse Ember 内部 API 获取帖子流
+                // 此方式不依赖 DOM 渲染，在浏览器最小化时也能正常获取全部帖子 ID
+                let mut stream_json = String::new();
+                for _ in 0..3 {
+                    stream_json = client
+                        .evaluate_as_string(JS_GET_POST_STREAM)
                         .await
-                        .unwrap_or_else(|_| "[]".to_string());
+                        .unwrap_or_default();
+                    if !stream_json.is_empty() {
+                        break;
+                    }
+                    delay_ms(1000).await;
+                }
 
-                    let post_ids: Vec<String> =
-                        serde_json::from_str(&posts_json).unwrap_or_default();
+                if !stream_json.is_empty() {
+                    // ===== API 模式：通过 Discourse 模型直接获取全部帖子 =====
+                    if let Ok(info) = serde_json::from_str::<Value>(&stream_json) {
+                        let stream = info
+                            .get("stream")
+                            .and_then(|s| s.as_array())
+                            .cloned()
+                            .unwrap_or_default();
 
-                    let mut new_posts = false;
-                    for post_id in &post_ids {
+                        // 直接将所有帖子 ID 计入已读
+                        for id_val in &stream {
+                            if total_read >= target || state.should_stop() {
+                                break;
+                            }
+                            let id = id_val.as_str().unwrap_or("").to_string();
+                            if !id.is_empty() && !seen_post_ids.contains(&id) {
+                                seen_post_ids.insert(id);
+                                total_read += 1;
+                            }
+                        }
+                        emit_progress(total_read, target, total_likes, false);
+
+                        // 向 Discourse 服务端发送阅读时间上报，使帖子被记录为已读
+                        let timing_result = client
+                            .evaluate_as_string(JS_SEND_POST_TIMINGS)
+                            .await
+                            .unwrap_or_else(|_| "error".to_string());
+                        if timing_result.starts_with("sent:") {
+                            emit_log(format!(
+                                "  📊 已上报 {} 个帖子的阅读记录",
+                                &timing_result[5..]
+                            ));
+                        } else {
+                            emit_warn(format!("  ⚠ 阅读上报失败: {}", timing_result));
+                        }
+
+                        // 点赞：需要将帖子逐批加载到 DOM 中才能操作点赞按钮
+                        if config.like_enabled && total_likes < config.like_max_count {
+                            let mut like_rounds = 0;
+                            loop {
+                                if state.should_stop() || total_likes >= config.like_max_count {
+                                    break;
+                                }
+
+                                let like_js = js_try_like_post(config.like_min_chars);
+                                let liked = client
+                                    .evaluate(&like_js)
+                                    .await
+                                    .unwrap_or(Value::Bool(false));
+                                if liked == Value::Bool(true) {
+                                    total_likes += 1;
+                                    emit_log(format!(
+                                        "  👍 点赞！(已点赞: {}/{})",
+                                        total_likes, config.like_max_count
+                                    ));
+                                    emit_progress(total_read, target, total_likes, false);
+                                }
+
+                                // 通过 Discourse API 加载下一批帖子到 DOM
+                                let load_result = client
+                                    .evaluate_as_string(JS_LOAD_NEXT_POSTS)
+                                    .await
+                                    .unwrap_or_else(|_| "no_api".to_string());
+
+                                if load_result != "loaded" {
+                                    break;
+                                }
+                                like_rounds += 1;
+                                if like_rounds > 50 {
+                                    break; // 安全上限：避免无限循环
+                                }
+                                delay_ms(delay).await;
+                            }
+                        }
+                    }
+                } else {
+                    // ===== DOM 回退模式：使用增强版滚动 =====
+                    let mut no_new_count = 0;
+
+                    let topic_total_posts = client
+                        .evaluate_as_i64(JS_GET_TOPIC_POST_COUNT)
+                        .await
+                        .unwrap_or(0) as u32;
+
+                    while total_read < target && !state.should_stop() {
+                        let posts_json = client
+                            .evaluate_as_string(JS_GET_POST_IDS)
+                            .await
+                            .unwrap_or_else(|_| "[]".to_string());
+
+                        let post_ids: Vec<String> =
+                            serde_json::from_str(&posts_json).unwrap_or_default();
+
+                        let mut new_posts = false;
+                        for post_id in &post_ids {
+                            if total_read >= target || state.should_stop() {
+                                break;
+                            }
+                            if post_id.is_empty() || seen_post_ids.contains(post_id) {
+                                continue;
+                            }
+                            seen_post_ids.insert(post_id.clone());
+                            total_read += 1;
+                            new_posts = true;
+                        }
+
+                        // 尝试点赞
+                        if config.like_enabled && total_likes < config.like_max_count {
+                            let like_js = js_try_like_post(config.like_min_chars);
+                            let liked = client
+                                .evaluate(&like_js)
+                                .await
+                                .unwrap_or(Value::Bool(false));
+                            if liked == Value::Bool(true) {
+                                total_likes += 1;
+                                emit_log(format!(
+                                    "  👍 点赞！(已点赞: {}/{})",
+                                    total_likes, config.like_max_count
+                                ));
+                            }
+                        }
+
+                        emit_progress(total_read, target, total_likes, false);
+
                         if total_read >= target || state.should_stop() {
                             break;
                         }
-                        if post_id.is_empty() || seen_post_ids.contains(post_id) {
-                            continue;
+
+                        // 增强版滚动：标准滚动 + 事件派发 + scrollIntoView
+                        client.evaluate(JS_SCROLL_BOTTOM_ENHANCED).await.ok();
+
+                        if new_posts {
+                            no_new_count = 0;
+                            delay_ms(delay).await;
+                        } else {
+                            no_new_count += 1;
+
+                            let all_loaded = topic_total_posts > 0
+                                && seen_post_ids.len() as u32 >= topic_total_posts;
+
+                            if all_loaded {
+                                break;
+                            }
+
+                            if no_new_count >= 15 {
+                                break;
+                            }
+
+                            delay_ms(2000).await;
+                            client.evaluate(JS_SCROLL_BOTTOM_ENHANCED).await.ok();
+                            delay_ms(500).await;
                         }
-                        seen_post_ids.insert(post_id.clone());
-                        total_read += 1;
-                        new_posts = true;
-                    }
-
-                    // 尝试点赞
-                    if config.like_enabled && total_likes < config.like_max_count {
-                        let like_js = js_try_like_post(config.like_min_chars);
-                        let liked =
-                            client.evaluate(&like_js).await.unwrap_or(Value::Bool(false));
-                        if liked == Value::Bool(true) {
-                            total_likes += 1;
-                            emit_log(format!(
-                                "  👍 点赞！(已点赞: {}/{})",
-                                total_likes, config.like_max_count
-                            ));
-                        }
-                    }
-
-                    emit_progress(total_read, target, total_likes, false);
-
-                    if total_read >= target || state.should_stop() {
-                        break;
-                    }
-
-                    // 滚动到页面底部，确保触发 Discourse 的帖子懒加载
-                    client.evaluate(JS_SCROLL_BOTTOM).await.ok();
-
-                    if new_posts {
-                        no_new_count = 0;
-                        delay_ms(delay).await;
-                    } else {
-                        no_new_count += 1;
-
-                        // 检查是否确实已读完所有帖子
-                        let all_loaded = topic_total_posts > 0
-                            && seen_post_ids.len() as u32 >= topic_total_posts;
-
-                        if all_loaded {
-                            // 话题内所有帖子已读完
-                            break;
-                        }
-
-                        if no_new_count >= 15 {
-                            // 等待较多轮仍无新帖，可能确实加载完了
-                            break;
-                        }
-
-                        // 等待 Discourse 完成懒加载
-                        delay_ms(2000).await;
-                        // 再次滚动到底部触发加载
-                        client.evaluate(JS_SCROLL_BOTTOM).await.ok();
-                        delay_ms(500).await;
                     }
                 }
 

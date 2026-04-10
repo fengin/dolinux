@@ -233,3 +233,123 @@ pub const JS_TRACK_TOPIC_VIEW: &str = r#"
     return true;
 })()
 "#;
+
+/// JS: 通过 Discourse 内部 Ember API 获取话题的全部帖子 ID 列表
+/// 返回 JSON 字符串: { "stream": ["id1","id2",...], "total": N, "canAppend": bool }
+/// stream 包含话题中所有帖子的 ID（直接来自模型数据，不依赖 DOM 渲染），
+/// 即使浏览器最小化也能正常工作。
+pub const JS_GET_POST_STREAM: &str = r#"
+(() => {
+    try {
+        const container = window.Discourse && (Discourse.__container__ || Discourse.__registry__);
+        if (container) {
+            const tc = container.lookup('controller:topic');
+            if (tc) {
+                const ps = tc.get('model.postStream');
+                if (ps) {
+                    const stream = ps.get('stream') || [];
+                    return JSON.stringify({
+                        stream: stream.map(String),
+                        total: stream.length,
+                        canAppend: !!ps.get('canAppendMore')
+                    });
+                }
+            }
+        }
+    } catch(e) {}
+    return '';
+})()
+"#;
+
+/// JS: 触发 Discourse 加载下一批帖子到 DOM（通过 Ember 内部 API，不依赖滚动触发）
+/// 返回: "loaded"（成功加载更多）/ "no_more"（已全部加载）/ "no_api"（API 不可用）
+pub const JS_LOAD_NEXT_POSTS: &str = r#"
+(async () => {
+    try {
+        const container = window.Discourse && (Discourse.__container__ || Discourse.__registry__);
+        if (container) {
+            const tc = container.lookup('controller:topic');
+            if (tc) {
+                const ps = tc.get('model.postStream');
+                if (ps && ps.appendMore) {
+                    if (ps.get('canAppendMore')) {
+                        await ps.appendMore();
+                        return 'loaded';
+                    }
+                    return 'no_more';
+                }
+            }
+        }
+    } catch(e) {}
+    return 'no_api';
+})()
+"#;
+
+/// JS: 增强版滚动到页面底部（用于 DOM 回退模式）
+/// 在标准 scrollTo 基础上主动派发 scroll 事件，
+/// 并尝试将最后一个帖子滚入视口，尽量触发 Discourse 的懒加载。
+pub const JS_SCROLL_BOTTOM_ENHANCED: &str = r#"
+(() => {
+    window.scrollTo(0, document.body.scrollHeight);
+    window.dispatchEvent(new Event('scroll', {bubbles: true}));
+    const posts = document.querySelectorAll('.topic-post');
+    if (posts.length > 0) {
+        posts[posts.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
+    }
+})()
+"#;
+
+/// JS: 向 Discourse 服务端发送帖子阅读时间报告，使帖子被记录为已读
+/// Discourse 通过 /topics/timings API 接收阅读上报，正常情况下由 ScreenTrack 服务
+/// 在帖子可见时自动发送。浏览器最小化时 ScreenTrack 不工作，需要手动发送。
+/// 自动分批（每批最多 500 个帖子号），返回格式: "sent:数量" / "no_api" / "error:原因"
+pub const JS_SEND_POST_TIMINGS: &str = r#"
+(async () => {
+    try {
+        const container = window.Discourse && (Discourse.__container__ || Discourse.__registry__);
+        if (!container) return 'no_api';
+
+        const tc = container.lookup('controller:topic');
+        if (!tc) return 'no_api';
+
+        const model = tc.get('model');
+        if (!model) return 'no_api';
+
+        const topicId = model.get('id');
+        const highestPostNumber = model.get('highest_post_number') || 0;
+
+        if (!topicId || highestPostNumber <= 0) return 'no_data';
+
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+        // 分批发送时间报告（每批最多 500 个帖子号）
+        const batchSize = 500;
+        let sentCount = 0;
+        for (let start = 1; start <= highestPostNumber; start += batchSize) {
+            const end = Math.min(start + batchSize - 1, highestPostNumber);
+            const params = new URLSearchParams();
+            params.append('topic_id', topicId);
+            params.append('topic_time', String((end - start + 1) * 4000));
+            for (let i = start; i <= end; i++) {
+                params.append('timings[' + i + ']', '4000');
+            }
+
+            await fetch('/topics/timings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-CSRF-Token': csrf,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Discourse-Present': 'true'
+                },
+                body: params.toString()
+            });
+            sentCount += (end - start + 1);
+        }
+
+        return 'sent:' + sentCount;
+    } catch(e) {
+        return 'error:' + e.message;
+    }
+})()
+"#;
