@@ -189,39 +189,59 @@ pub async fn run(
                 }
 
                 if !stream_json.is_empty() {
-                    // ===== API 模式：通过 Discourse 模型直接获取全部帖子 =====
+                    // ===== API 模式：通过 Discourse 模型获取话题阅读状态 =====
                     if let Ok(info) = serde_json::from_str::<Value>(&stream_json) {
-                        let stream = info
-                            .get("stream")
-                            .and_then(|s| s.as_array())
-                            .cloned()
-                            .unwrap_or_default();
+                        let highest = info
+                            .get("highestPostNumber")
+                            .and_then(|n| n.as_u64())
+                            .unwrap_or(0) as u32;
+                        let last_read = info
+                            .get("lastReadPostNumber")
+                            .and_then(|n| n.as_u64())
+                            .unwrap_or(0) as u32;
 
-                        // 直接将所有帖子 ID 计入已读
-                        for id_val in &stream {
-                            if total_read >= target || state.should_stop() {
-                                break;
-                            }
-                            let id = id_val.as_str().unwrap_or("").to_string();
-                            if !id.is_empty() && !seen_post_ids.contains(&id) {
-                                seen_post_ids.insert(id);
-                                total_read += 1;
-                            }
-                        }
-                        emit_progress(total_read, target, total_likes, false);
-
-                        // 向 Discourse 服务端发送阅读时间上报，使帖子被记录为已读
-                        let timing_result = client
-                            .evaluate_as_string(JS_SEND_POST_TIMINGS)
-                            .await
-                            .unwrap_or_else(|_| "error".to_string());
-                        if timing_result.starts_with("sent:") {
-                            emit_log(format!(
-                                "  📊 已上报 {} 个帖子的阅读记录",
-                                &timing_result[5..]
-                            ));
+                        // 计算未读帖子数
+                        let unread_count = if highest > last_read {
+                            highest - last_read
                         } else {
-                            emit_warn(format!("  ⚠ 阅读上报失败: {}", timing_result));
+                            0
+                        };
+
+                        if unread_count == 0 {
+                            emit_log("  本话题无未读帖子，跳过".to_string());
+                        } else {
+                            // 本次需要阅读的数量 = min(未读数, 剩余目标数)
+                            let remaining = target.saturating_sub(total_read);
+                            let posts_to_read =
+                                std::cmp::min(unread_count, remaining);
+
+                            total_read += posts_to_read;
+                            emit_progress(total_read, target, total_likes, false);
+
+                            // 上报范围：从 last_read+1 到 last_read+posts_to_read
+                            let from_post = last_read + 1;
+                            let to_post = last_read + posts_to_read;
+                            let timing_js =
+                                js_send_post_timings(from_post, to_post);
+                            let timing_result = client
+                                .evaluate_as_string(&timing_js)
+                                .await
+                                .unwrap_or_else(|_| "error".to_string());
+
+                            if timing_result.starts_with("sent:") {
+                                emit_log(format!(
+                                    "  📊 未读 {} 个，本次阅读 {} 个，已上报 #{}-#{} 的阅读记录",
+                                    unread_count,
+                                    posts_to_read,
+                                    from_post,
+                                    to_post
+                                ));
+                            } else {
+                                emit_warn(format!(
+                                    "  ⚠ 阅读上报失败: {}",
+                                    timing_result
+                                ));
+                            }
                         }
 
                         // 点赞：需要将帖子逐批加载到 DOM 中才能操作点赞按钮
@@ -344,8 +364,7 @@ pub async fn run(
                 }
 
                 emit_log(format!(
-                    "  本话题阅读 {} 个帖子，累计: {}/{}",
-                    seen_post_ids.len(),
+                    "  累计: {}/{}",
                     total_read,
                     target
                 ));
@@ -357,7 +376,7 @@ pub async fn run(
             }
 
             emit_log(format!(
-                "入口 {} 完成，累计阅读: {}/{}",
+                "入口 {} 完成，累计: {}/{}",
                 entry_idx + 1,
                 total_read,
                 target
@@ -372,18 +391,22 @@ pub async fn run(
     }
 
     // 任务完成
-    let msg = if state.should_stop() {
-        format!(
-            "任务已停止！共阅读 {} 个帖子，点赞 {} 个",
+    if state.should_stop() {
+        emit_log(format!(
+            "⏹ 任务已停止，共阅读 {} 个帖子，点赞 {} 个",
             total_read, total_likes
-        )
-    } else {
-        format!(
+        ));
+    } else if total_read >= target {
+        emit_log(format!(
             "✅ 任务完成！共阅读 {} 个帖子，点赞 {} 个",
             total_read, total_likes
-        )
-    };
-    emit_log(msg);
+        ));
+    } else {
+        emit_warn(format!(
+            "⚠ 当前入口的未读帖子已全部处理，共阅读 {} 个（目标 {}，还差 {} 个）。如需继续，请在设置中添加其他阅读入口后重新执行",
+            total_read, target, target - total_read
+        ));
+    }
     emit_progress(total_read, target, total_likes, true);
 
     state.finish_task();

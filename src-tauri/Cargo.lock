@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "dolinux"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "env_logger",
  "futures-util",

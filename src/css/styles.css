@@ -56,7 +56,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 24px;
+    padding: 10px 24px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
     -webkit-app-region: drag;
@@ -98,6 +98,58 @@ body {
     background: var(--bg-hover);
     color: var(--text-secondary);
 }
+
+/* ===== 窗口控件 ===== */
+.window-controls {
+    display: flex;
+    align-items: center;
+    -webkit-app-region: no-drag;
+}
+
+/* -- Windows 风格 -- */
+.window-controls-win {
+    margin-left: 8px;
+}
+.win-btn {
+    width: 36px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+    -webkit-app-region: no-drag;
+}
+.win-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.win-btn.win-close:hover { background: #e81123; color: #fff; }
+
+/* -- macOS 风格（默认隐藏） -- */
+.window-controls-mac {
+    display: none;
+    gap: 8px;
+    margin-right: 12px;
+}
+.mac-btn {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    -webkit-app-region: no-drag;
+}
+.mac-btn:hover { opacity: 0.8; }
+.mac-close { background: #ff5f57; }
+.mac-minimize { background: #ffbd2e; }
+.mac-maximize { background: #28c940; }
+
+/* macOS 平台激活时 */
+body.platform-mac .window-controls-win { display: none; }
+body.platform-mac .window-controls-mac { display: flex; }
 
 /* ===== 连接状态栏 ===== */
 .connection-bar {
@@ -230,7 +282,6 @@ body {
 
 /* ===== 任务卡片区域 ===== */
 .task-area {
-    flex: 1;
     overflow-y: auto;
     padding: 16px 24px;
     display: flex;
@@ -366,9 +417,13 @@ body {
 
 /* ===== 日志面板 ===== */
 .log-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
     border-top: 1px solid var(--border);
     background: var(--bg-secondary);
     min-height: 40px;
+    overflow: hidden;
 }
 
 .log-header {
@@ -399,7 +454,7 @@ body {
 }
 
 .log-content {
-    max-height: 200px;
+    flex: 1;
     overflow-y: auto;
     padding: 0 24px 8px;
     font-family: 'Cascadia Code', 'Consolas', 'SF Mono', 'Menlo', monospace;

@@ -234,10 +234,11 @@ pub const JS_TRACK_TOPIC_VIEW: &str = r#"
 })()
 "#;
 
-/// JS: 通过 Discourse 内部 Ember API 获取话题的全部帖子 ID 列表
-/// 返回 JSON 字符串: { "stream": ["id1","id2",...], "total": N, "canAppend": bool }
-/// stream 包含话题中所有帖子的 ID（直接来自模型数据，不依赖 DOM 渲染），
-/// 即使浏览器最小化也能正常工作。
+/// JS: 通过 Discourse 内部 Ember API 获取话题信息
+/// 返回 JSON: { "total": N, "highestPostNumber": N, "lastReadPostNumber": N, "canAppend": bool }
+/// highestPostNumber: 话题中最高帖子编号（含已删除的编号）
+/// lastReadPostNumber: 当前用户已读到的帖子编号（0=未读过）
+/// 未读帖子数 = highestPostNumber - lastReadPostNumber
 pub const JS_GET_POST_STREAM: &str = r#"
 (() => {
     try {
@@ -245,12 +246,14 @@ pub const JS_GET_POST_STREAM: &str = r#"
         if (container) {
             const tc = container.lookup('controller:topic');
             if (tc) {
-                const ps = tc.get('model.postStream');
+                const model = tc.get('model');
+                const ps = model && model.get('postStream');
                 if (ps) {
                     const stream = ps.get('stream') || [];
                     return JSON.stringify({
-                        stream: stream.map(String),
                         total: stream.length,
+                        highestPostNumber: model.get('highest_post_number') || 0,
+                        lastReadPostNumber: model.get('last_read_post_number') || 0,
                         canAppend: !!ps.get('canAppendMore')
                     });
                 }
@@ -300,12 +303,13 @@ pub const JS_SCROLL_BOTTOM_ENHANCED: &str = r#"
 "#;
 
 /// JS: 向 Discourse 服务端发送帖子阅读时间报告，使帖子被记录为已读
-/// Discourse 通过 /topics/timings API 接收阅读上报，正常情况下由 ScreenTrack 服务
-/// 在帖子可见时自动发送。浏览器最小化时 ScreenTrack 不工作，需要手动发送。
+/// from_post 和 to_post 指定上报的帖子号范围（闭区间），
+/// 只上报未读范围，避免重复上报已读帖子。
 /// 自动分批（每批最多 500 个帖子号），返回格式: "sent:数量" / "no_api" / "error:原因"
-pub const JS_SEND_POST_TIMINGS: &str = r#"
-(async () => {
-    try {
+pub fn js_send_post_timings(from_post: u32, to_post: u32) -> String {
+    format!(r#"
+(async () => {{
+    try {{
         const container = window.Discourse && (Discourse.__container__ || Discourse.__registry__);
         if (!container) return 'no_api';
 
@@ -316,40 +320,42 @@ pub const JS_SEND_POST_TIMINGS: &str = r#"
         if (!model) return 'no_api';
 
         const topicId = model.get('id');
-        const highestPostNumber = model.get('highest_post_number') || 0;
+        if (!topicId) return 'no_data';
 
-        if (!topicId || highestPostNumber <= 0) return 'no_data';
+        const fromPost = {from_post};
+        const toPost = {to_post};
+        if (fromPost > toPost || fromPost <= 0) return 'no_data';
 
         const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
-        // 分批发送时间报告（每批最多 500 个帖子号）
         const batchSize = 500;
         let sentCount = 0;
-        for (let start = 1; start <= highestPostNumber; start += batchSize) {
-            const end = Math.min(start + batchSize - 1, highestPostNumber);
+        for (let start = fromPost; start <= toPost; start += batchSize) {{
+            const end = Math.min(start + batchSize - 1, toPost);
             const params = new URLSearchParams();
             params.append('topic_id', topicId);
             params.append('topic_time', String((end - start + 1) * 4000));
-            for (let i = start; i <= end; i++) {
+            for (let i = start; i <= end; i++) {{
                 params.append('timings[' + i + ']', '4000');
-            }
+            }}
 
-            await fetch('/topics/timings', {
+            await fetch('/topics/timings', {{
                 method: 'POST',
-                headers: {
+                headers: {{
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                     'X-CSRF-Token': csrf,
                     'X-Requested-With': 'XMLHttpRequest',
                     'Discourse-Present': 'true'
-                },
+                }},
                 body: params.toString()
-            });
+            }});
             sentCount += (end - start + 1);
-        }
+        }}
 
         return 'sent:' + sentCount;
-    } catch(e) {
+    }} catch(e) {{
         return 'error:' + e.message;
-    }
-})()
-"#;
+    }}
+}})()
+"#, from_post = from_post, to_post = to_post)
+}

@@ -4,6 +4,10 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
     "shell:allow-open",
     "shell:allow-execute",
     "dialog:allow-open"

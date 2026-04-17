@@ -11,6 +11,11 @@ let APP = {
 document.addEventListener('DOMContentLoaded', async () => {
     Logger.init();
 
+    // 平台检测：macOS 窗口控件在左侧
+    if (navigator.platform.toUpperCase().includes('MAC') || navigator.userAgent.includes('Macintosh')) {
+        document.body.classList.add('platform-mac');
+    }
+
     // 加载配置
     try {
         APP.config = await API.getConfig();
@@ -77,6 +82,9 @@ function bindEvents() {
             }
         });
     });
+
+    // 窗口控件
+    bindWindowControls();
 }
 
 // ========== 事件订阅 ==========
@@ -398,4 +406,21 @@ function openAbout() {
 
 function closeAbout() {
     document.getElementById('modal-about').style.display = 'none';
+}
+
+// ========== 窗口控件 ==========
+function bindWindowControls() {
+    if (!window.__TAURI__) return;
+    const { getCurrentWindow } = window.__TAURI__.window;
+    const appWindow = getCurrentWindow();
+
+    // Windows 控件
+    document.getElementById('btn-minimize-win')?.addEventListener('click', () => appWindow.minimize());
+    document.getElementById('btn-maximize-win')?.addEventListener('click', () => appWindow.toggleMaximize());
+    document.getElementById('btn-close-win')?.addEventListener('click', () => appWindow.close());
+
+    // macOS 控件
+    document.getElementById('btn-close-mac')?.addEventListener('click', () => appWindow.close());
+    document.getElementById('btn-minimize-mac')?.addEventListener('click', () => appWindow.minimize());
+    document.getElementById('btn-maximize-mac')?.addEventListener('click', () => appWindow.toggleMaximize());
 }

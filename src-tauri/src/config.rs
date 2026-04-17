@@ -57,7 +57,7 @@ impl Default for AppConfig {
                 skip_top: 3,
                 delay_ms: 200,
                 entry_urls: vec![
-                    "https://linux.do/hot?order=posts".to_string(),
+                    "https://linux.do/unread".to_string(),
                 ],
                 like_enabled: true,
                 like_min_chars: 50,

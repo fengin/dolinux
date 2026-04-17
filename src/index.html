@@ -11,6 +11,12 @@
         <!-- 顶部标题栏 -->
         <header class="app-header">
             <div class="header-left">
+                <!-- macOS 窗口控件（左侧，默认隐藏，JS 检测 macOS 后显示） -->
+                <div class="window-controls window-controls-mac" id="win-controls-mac">
+                    <button class="mac-btn mac-close" id="btn-close-mac" title="关闭"></button>
+                    <button class="mac-btn mac-minimize" id="btn-minimize-mac" title="最小化"></button>
+                    <button class="mac-btn mac-maximize" id="btn-maximize-mac" title="最大化"></button>
+                </div>
                 <div class="logo">
                     <span class="logo-icon">⚡</span>
                     <span class="logo-text">流读</span>
@@ -20,6 +26,12 @@
             <div class="header-right">
                 <button id="btn-settings" class="icon-btn" title="设置">⚙️</button>
                 <button id="btn-about" class="icon-btn" title="关于">ℹ️</button>
+                <!-- Windows 窗口控件（右侧） -->
+                <div class="window-controls window-controls-win" id="win-controls-win">
+                    <button class="win-btn win-minimize" id="btn-minimize-win" title="最小化">─</button>
+                    <button class="win-btn win-maximize" id="btn-maximize-win" title="最大化">□</button>
+                    <button class="win-btn win-close" id="btn-close-win" title="关闭">✕</button>
+                </div>
             </div>
         </header>
 
@@ -190,7 +202,7 @@
                 <div class="about-logo">⚡</div>
                 <h2 class="about-title">流读</h2>
                 <p class="about-subtitle">Linux.do 阅读助手</p>
-                <p class="about-version" id="about-version">v1.0.2</p>
+                <p class="about-version" id="about-version">v1.1.0</p>
 
                 <div class="about-divider"></div>
 
