@@ -17,15 +17,19 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             label: windows-x64
+            bundle: nsis
           - platform: macos-latest
             target: aarch64-apple-darwin
             label: macos-arm64
+            bundle: app
           - platform: macos-latest
             target: x86_64-apple-darwin
             label: macos-x64
+            bundle: app
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             label: linux-x64
+            bundle: appimage
 
     runs-on: ${{ matrix.platform }}
 
@@ -63,7 +67,7 @@ jobs:
         run: npm install
 
       - name: Build Tauri app
-        run: npx tauri build --bundles app,nsis,appimage --target ${{ matrix.target }}
+        run: npx tauri build --bundles ${{ matrix.bundle }} --target ${{ matrix.target }}
 
       # ===== 打包为平台可移植文件 =====
 
